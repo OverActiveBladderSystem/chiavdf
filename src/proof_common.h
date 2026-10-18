@@ -115,19 +115,46 @@ form FastPowFormNucomp(form x, integer &D, integer num_iterations, integer &L, P
     if (!mpz_sgn(num_iterations.impl))
         return form::identity(D);
 
-    form res = x;
-    int max_size = -D.impl->_mp_size / 2, i;
-
-    // Do exponentiation by squaring from top bits of exponent to bottom
-    for (i = num_iterations.num_bits() - 2; i >= 0; i--) {
-        nudupl_form(res, res, D, L);
-        if (res.a.impl->_mp_size > max_size) {
-            // Reduce only when 'a' exceeds a half of the discriminant size
-            reducer.reduce(res);
+    const int max_size = -D.impl->_mp_size / 2;
+    auto reduce_if_large = [&](form& f) {
+        if (f.a.impl->_mp_size > max_size) {
+            reducer.reduce(f);
         }
+    };
 
-        if (num_iterations.get_bit(i)) {
-            nucomp_form(res, res, x, D, L);
+    // 4-bit window. The final reduce makes this the same class as binary exponentiation.
+    constexpr int kWindow = 4;
+    constexpr int kTable = 1 << kWindow;
+    form table[kTable];
+    table[1] = x;
+    for (int i = 2; i < kTable; ++i) {
+        nucomp_form(table[i], table[i - 1], x, D, L);
+        reduce_if_large(table[i]);
+    }
+
+    const int nbits = num_iterations.num_bits();
+    int index = nbits - 1;
+    auto take_bits = [&](int count) {
+        unsigned digit = 0;
+        for (int i = 0; i < count; ++i) {
+            digit = (digit << 1) | static_cast<unsigned>(num_iterations.get_bit(index));
+            --index;
+        }
+        return digit;
+    };
+
+    const int first_width = (nbits % kWindow == 0) ? kWindow : (nbits % kWindow);
+    form res = table[take_bits(first_width)];
+
+    while (index >= 0) {
+        for (int i = 0; i < kWindow; ++i) {
+            nudupl_form(res, res, D, L);
+            reduce_if_large(res);
+        }
+        const unsigned digit = take_bits(kWindow);
+        if (digit != 0) {
+            nucomp_form(res, res, table[digit], D, L);
+            reduce_if_large(res);
         }
     }
 
