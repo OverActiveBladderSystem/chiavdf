@@ -60,6 +60,12 @@ typedef struct qfb
 typedef qfb qfb_t[1];
 
 // From Antic using Flint (works!)
+// MSVC link-time optimization miscompiles this function when it is inlined,
+// and the Windows package then divides by zero. Keep it out of line there.
+// Other compilers are unchanged.
+#if defined(_MSC_VER)
+__declspec(noinline)
+#endif
 void qfb_nucomp(qfb_t r, const qfb_t f, const qfb_t g, mpz_t const& D, mpz_t const& L)
 {
    // Order the inputs once. A recursive call would re-enter the thread-local
